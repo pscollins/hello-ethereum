@@ -132,5 +132,7 @@ def main():
 
     print_report(fund.report(campaign, bob))
 
+    print root.genesis.to_dict()
+
 if __name__ == '__main__':
     main()
