@@ -1,0 +1,39 @@
+COUNTER_OFFSET = 4
+POT_INDEX_OFFSET = 3
+GOAL_OFFSET = 1
+OWNER_OFFSET = 0
+
+NEW_CAMPAIGN = 0
+DONATION = 1
+REPORT = 2
+
+if msg.data[0] == NEW_CAMPAIGN:
+    # Start a campaign, data [goal, time limit]
+    id = contract.storage[-1]
+    contract.storage[-1] = id + 2^128
+    contract.storage[id + OWNER_OFFSET] = msg.sender // Campaign creator
+    contract.storage[id + GOAL_OFFSET] = msg.data[1] // Goal
+    # contract.storage[id + 2] = block.timestamp + msg.data[2] // Time limit
+    contract.storage[id + POT_INDEX_OFFSET] = id + 5 // Start recording donations here
+    // contract.storage[id + 4] is a running counter
+    return(id)
+elif msg.data[0] == DONATION:
+    # Contribute to a campaign [id]
+    id = msg.data[1]
+    contract.storage[id + COUNTER_OFFSET] = contract.storage[id + COUNTER_OFFSET] + msg.value
+    sub_index = contract.storage[id + POT_INDEX_OFFSET]
+    contract.storage[sub_index] = msg.sender
+    contract.storage[sub_index + 1] = msg.value
+    contract.storage[id + 3] = sub_index + 2
+    # Enough funding?
+    if contract.storage[id + COUNTER_OFFSET] >= contract.storage[id + GOAL_OFFSET]:
+        send(contract.storage[id], contract.storage[id + COUNTER_OFFSET])
+        v = id
+        f = sub_index + 2
+        while v < f:
+            contract.storage[v] = 0
+            v += 1
+        return(1)
+elif msg.data[0] == REPORT:
+    # Progress report [id]
+    return(contract.storage[msg.data[1]] + 4)
