@@ -1,13 +1,22 @@
 import serpent
 from pyethereum import transactions, blocks, processblock, utils
+import ipdb
 
 class NonceSingleton(object):
-    nonce = 0
+    nonces = {}
 
     @classmethod
-    def inc(cls):
-        cls.nonce += 1
-        return cls.nonce
+    def inc(cls, user):
+        nonce = -1
+        try:
+            nonce = cls.nonces[user]
+        except KeyError:
+            cls.nonces[user] = 0
+            nonce = cls.nonces[user]
+
+        cls.nonces[user] += 1
+
+        return nonce
 
 class EthereumUser(object):
     START_BALANCE = 10 ** 18
@@ -15,7 +24,7 @@ class EthereumUser(object):
     def __init__(self, name, genesis=None):
         self.private_key = utils.sha3(name)
         self.addr = utils.privtoaddr(self.private_key)
-        self.genesis = genesis or blocks.genesis({addr=self.START_BALANCE})
+        self.genesis = genesis or blocks.genesis({self.addr: self.START_BALANCE})
 
     def apply_tx(self, tx):
         return processblock.apply_tx(self.genesis, tx)
@@ -30,19 +39,19 @@ class Message(object):
         self.donate_to = donate_to
         self.data = serpent.encode_datalist([self._data_code(),
                                              donate_to])
-        self.tx = transactions.Transaction(NonceSingleton.inc(),
-                                           self.DEFAULT_GASPRICE,
-                                           self.DEFAULT_STARTGAS,
-                                           to,
-                                           value,
-                                           self.data)
+        self.tx = lambda user: transactions.Transaction(NonceSingleton.inc(user),
+                                                        self.DEFAULT_GASPRICE,
+                                                        self.DEFAULT_STARTGAS,
+                                                        to,
+                                                        value,
+                                                        self.data)
 
     def _data_code(self):
         raise NotImplementedError()
 
     def execute(self, from_):
-        signed_tx = self.tx.sign(from_.private_key)
-        return processblock.apply_transaction(from_.genesis, signed_ts)
+        signed_tx = self.tx(from_).sign(from_.private_key)
+        return processblock.apply_transaction(from_.genesis, signed_tx)
 
 class Campaign(Message):
     def _data_code(self):
@@ -59,8 +68,8 @@ class Report(Message):
 class Crowdfund(object):
     def __init__(self, root_user):
         self.user = root_user
-        self.code = serpent.compile(open('./crowdfund.se'))
-        tx = transactions.contract(NonceSingleton.inc(),
+        self.code = serpent.compile(open('./crowdfund.se').read())
+        tx = transactions.contract(NonceSingleton.inc(root_user),
                                    Message.DEFAULT_GASPRICE,
                                    Message.DEFAULT_STARTGAS,
                                    0,
@@ -69,7 +78,7 @@ class Crowdfund(object):
         print "Made crowdfund tx: {}".format(tx)
 
         self.contract = self._wrap_contract_response(
-            processblock.apply_tx(root_user.genesis, tx))
+            processblock.apply_transaction(root_user.genesis, tx))
 
 
 
@@ -97,4 +106,31 @@ class Crowdfund(object):
 
         print "Made report: {}".format(report)
 
-        return self._wrap_contract_response(donation.execute(from_))
+        return self._wrap_contract_response(report.execute(from_))
+
+def frombytes(b):
+    return 0 if len(b) == 0 else ord(b[-1]) + 256 * frombytes(b[:-1])
+
+def print_report(report):
+    # ipdb.set_trace()
+    print "Decoded: {}".format(frombytes(report))
+
+def main():
+    root = EthereumUser("helloworld")
+    alice = EthereumUser("alice", genesis=root.genesis)
+    bob = EthereumUser("bob", genesis=root.genesis)
+
+    fund = Crowdfund(root)
+
+    campaign = fund.campaign(100, alice)
+    print_report(fund.report(campaign, alice))
+    print_report(fund.report(campaign, bob))
+    fund.donation(campaign, root, 50)
+    print_report(fund.report(campaign, bob))
+
+    fund.donation(campaign, root, 100)
+
+    print_report(fund.report(campaign, bob))
+
+if __name__ == '__main__':
+    main()

@@ -36,4 +36,4 @@ elif msg.data[0] == DONATION:
         return(1)
 elif msg.data[0] == REPORT:
     # Progress report [id]
-    return(contract.storage[msg.data[1]] + 4)
+    return(contract.storage[msg.data[1] + COUNTER_OFFSET])
